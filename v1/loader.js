@@ -134,6 +134,7 @@
         
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
+			console.log(xhr.responseText);
             resolve(JSON.parse(xhr.responseText));
           } else {
             reject(xhr.statusText);
