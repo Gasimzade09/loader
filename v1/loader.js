@@ -2,7 +2,7 @@
   'use strict';
 
   const CONFIG = {
-    API_URL: 'https://api.riskengine.dev/v1/api/risk',
+    API_URL: 'https://api.riskengine.dev/v1/api/risk/check',
     TIMEOUT: 1000, // Если не ответили за 1с - пропускаем юзера
     DEBUG: false
   };
