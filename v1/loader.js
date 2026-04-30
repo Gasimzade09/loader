@@ -129,6 +129,7 @@
         const xhr = new XMLHttpRequest();
         xhr.open('POST', CONFIG.API_URL, true);
         xhr.setRequestHeader('Content-Type', 'application/json');
+		xhr.setRequestHeader('X-API-KEY', 'ck_live_7gZ0zYG2-f8OwXYNUSBjlT3JQdsz5kEnMFahJvXjzDw');
         xhr.timeout = CONFIG.TIMEOUT;
         
         xhr.onload = () => {
