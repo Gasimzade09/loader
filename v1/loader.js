@@ -1,175 +1,98 @@
-(function(window, document) {
+(function() {
   'use strict';
 
-  const CONFIG = {
-    API_URL: 'https://api.riskengine.dev/v1/api/risk/check',
-    TIMEOUT: 1000, // Если не ответили за 1с - пропускаем юзера
-    DEBUG: false
-  };
+  console.log('RiskEngine: Loader started');
 
-  // Получаем ключ из data-атрибута: <script data-key="pk_live_xxx">
-  const SCRIPT_TAG = document.currentScript;
-  const PUBLIC_KEY = SCRIPT_TAG.getAttribute('data-key');
-  
-  if (!PUBLIC_KEY) {
-    log('RiskEngine: Public key missing. Add data-key="pk_live_xxx"');
+  var script = document.currentScript || document.querySelector('script[data-key]');
+  if (!script) {
+    console.error('RiskEngine: script tag with data-key not found');
     return;
   }
 
-  const RiskEngine = {
-    token: null,
-    
-    init: function() {
-      this.findForms();
-      this.observeNewForms();
-    },
+  var publicKey = script.getAttribute('data-key');
+  var debug = script.getAttribute('data-debug') === '1';
 
-    findForms: function() {
-      // Ищем формы регистрации. Казино обычно ставят id="reg-form" или data-form="signup"
-      const forms = document.querySelectorAll('form[id*="reg"], form[id*="signup"], form[data-form*="reg"]');
-      forms.forEach(form => this.attachToForm(form));
-    },
+  if (!publicKey) {
+    console.error('RiskEngine: data-key is missing');
+    return;
+  }
 
-    observeNewForms: function() {
-      // Для SPA типа React/Vue где формы рендерятся после загрузки
-      const observer = new MutationObserver(() => this.findForms());
-      observer.observe(document.body, { childList: true, subtree: true });
-    },
+  if (debug) console.log('RiskEngine: Using key', publicKey);
 
-    attachToForm: function(form) {
+  function attachToForms() {
+    var forms = document.querySelectorAll('form');
+    console.log('RiskEngine: Found forms', forms.length);
+
+    forms.forEach(function(form, idx) {
       if (form.dataset.riskEngineAttached) return;
-      form.dataset.riskEngineAttached = 'true';
-      
-      form.addEventListener('submit', (e) => this.handleSubmit(e, form));
-      log('RiskEngine: Attached to form', form);
-    },
+      form.dataset.riskEngineAttached = '1';
 
-    handleSubmit: async function(e, form) {
-      // Если токен уже есть - не чекаем второй раз
-      if (this.token) {
-        this.injectToken(form);
-        return;
-      }
+      console.log('RiskEngine: Attached to form', idx);
 
-      // Стопорим форму, но не дольше TIMEOUT
-      e.preventDefault();
-      e.stopPropagation();
-      
-      const submitBtn = form.querySelector('[type="submit"]');
-      if (submitBtn) submitBtn.disabled = true;
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        console.log('RiskEngine: Form submit intercepted');
 
-      try {
-        const payload = await this.buildPayload(form);
-        const result = await this.apiCheck(payload);
-        this.token = result.user_token;
-        log('RiskEngine: Check complete', result);
-      } catch (err) {
-        log('RiskEngine: Check failed, passing through', err);
-        // Если мы упали - не блочим регу казино. Это критично.
-        this.token = 're_' + Date.now(); // Фейковый токен чтобы не упасть
-      } finally {
-        this.injectToken(form);
-        if (submitBtn) submitBtn.disabled = false;
-        // Триггерим submit еще раз, уже с токеном
-        HTMLFormElement.prototype.submit.call(form);
-      }
-    },
+        var formData = new FormData(form);
+        var data = {};
+        formData.forEach(function(value, key) {
+          data[key] = value;
+        });
 
-    buildPayload: async function(form) {
-      const formData = new FormData(form);
-      const email = formData.get('email') || formData.get('mail') || '';
-      
-      // 1. Собираем фингерпринт. Юзаем легкую либу.
-      const device_hash = await this.getDeviceHash();
-      
-      // 2. Хешируем email чтобы не слать PII в открытом виде
-      const email_hash = email ? await this.sha256(email.toLowerCase().trim()) : null;
+        if (debug) console.log('RiskEngine: Sending data', data);
 
-      return {
-        public_key: PUBLIC_KEY,
-        device_hash: device_hash,
-        email_hash: email_hash,
-        url: window.location.href,
-        ref: document.referrer,
-        ts: Date.now(),
-        // Автоматические флаги
-        webdriver: navigator.webdriver || false,
-        lang: navigator.language,
-        tz_offset: new Date().getTimezoneOffset()
-      };
-    },
-
-    getDeviceHash: async function() {
-      // Легкий фингерпринт без тяжелых либ. Canvas + screen + timezone
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      ctx.textBaseline = 'top';
-      ctx.font = '14px Arial';
-      ctx.fillText('riskengine', 2, 2);
-      const canvas_fp = canvas.toDataURL();
-      
-      const data = [
-        navigator.userAgent,
-        screen.width + 'x' + screen.height,
-        new Date().getTimezoneOffset(),
-        !!window.chrome,
-        canvas_fp.slice(-50) // берем кусок base64
-      ].join('::');
-      
-      return this.sha256(data);
-    },
-
-    sha256: async function(str) {
-      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    },
-
-    apiCheck: function(payload) {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', CONFIG.API_URL, true);
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', 'https://api.riskengine.dev/v1/api/risk/check', true);
         xhr.setRequestHeader('Content-Type', 'application/json');
-		xhr.setRequestHeader('X-API-KEY', 'ck_live_7gZ0zYG2-f8OwXYNUSBjlT3JQdsz5kEnMFahJvXjzDw');
-        xhr.timeout = CONFIG.TIMEOUT;
-        
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-			console.log(xhr.responseText);
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            reject(xhr.statusText);
+        xhr.setRequestHeader('X-API-Key', publicKey);
+
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState === 4) {
+            console.log('RiskEngine: Status', xhr.status);
+            console.log('RiskEngine: Response body', xhr.responseText);
+
+            if (xhr.status === 200) {
+              try {
+                var json = JSON.parse(xhr.responseText);
+                console.log('RiskEngine: Token received', json);
+
+                var tokenInput = form.querySelector('input[name="risk_token"]');
+                if (!tokenInput) {
+                  tokenInput = document.createElement('input');
+                  tokenInput.type = 'hidden';
+                  tokenInput.name = 'risk_token';
+                  form.appendChild(tokenInput);
+                }
+                tokenInput.value = json.token || json.risk_token || '';
+
+                console.log('RiskEngine: Submitting form with token');
+                form.submit();
+              } catch (err) {
+                console.error('RiskEngine: JSON parse error', err);
+                form.submit();
+              }
+            } else {
+              console.error('RiskEngine: Error', xhr.status, xhr.responseText);
+              // Сабмитим форму даже при ошибке, чтобы не ломать юзеру регистрацию
+              form.submit();
+            }
           }
         };
-        xhr.onerror = () => reject('Network error');
-        xhr.ontimeout = () => reject('Timeout');
-        
-        xhr.send(JSON.stringify(payload));
+
+        xhr.onerror = function() {
+          console.error('RiskEngine: Network error');
+          form.submit();
+        };
+
+        xhr.send(JSON.stringify(data));
       });
-    },
-
-    injectToken: function(form) {
-      let input = form.querySelector('input[name="risk_token"]');
-      if (!input) {
-        input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'risk_token';
-        form.appendChild(input);
-      }
-      input.value = this.token;
-    }
-  };
-
-  function log(...args) {
-    if (CONFIG.DEBUG || window.location.search.includes('risk_debug=1')) {
-      console.log(...args);
-    }
+    });
   }
 
-  // Запуск
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => RiskEngine.init());
+    document.addEventListener('DOMContentLoaded', attachToForms);
   } else {
-    RiskEngine.init();
+    attachToForms();
   }
 
-})(window, document);
+})();
