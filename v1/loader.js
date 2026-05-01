@@ -44,7 +44,7 @@
         var xhr = new XMLHttpRequest();
         xhr.open('POST', 'https://api.riskengine.dev/v1/api/risk/check', true);
         xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.setRequestHeader('X-API-Key', publicKey);
+        xhr.setRequestHeader('X-API-Key', 'ck_live_7gZ0zYG2-f8OwXYNUSBjlT3JQdsz5kEnMFahJvXjzDw');
 
         xhr.onreadystatechange = function() {
           if (xhr.readyState === 4) {
